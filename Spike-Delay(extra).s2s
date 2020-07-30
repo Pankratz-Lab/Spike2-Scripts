@@ -1,0 +1,244 @@
+var timevh%,spkch%,channel1%,channel2%,prmpt$,delay,log%,spike1,spike2,log1%,found%,ttl$,ndx%,result$,windowname$;  
+
+
+
+timevh% := View();
+
+HCursorDelete(-1);
+CursorDelete(-1);
+
+View(LogHandle());
+EditSelectAll();
+EditClear();
+
+View(timevh%);
+FrontView(timevh%);
+
+MainToolButtons(); 				                                
+FrontView(timevh%);
+
+Proc MainToolButtons(); 
+
+  ToolbarClear();                                           
+  ToolbarSet(1,"&Quit",quit%); 
+  ToolbarSet(2,"&New File",newfile%);
+  ToolbarSet(3,"&Analysis",analysis%);                   
+  ToolbarSet(4,"&Optimize",optimize%);					
+  ToolbarSet(5,"&Show All",showall%);              
+  Toolbar("Spike-Delay",1023); 
+
+end;
+
+func quit%();	                                         'Tidy up and Close
+var A%;	                                                 'list of views
+A%:=Query("Are you sure you want to Quit?\n Unsaved channels will be discarded.","No","&Yes");
+if A% = 1 then
+	return 1;	                                         'cancel quit
+endif;	                                                 'else proceed with close-down 
+'CloseFiles();
+if ViewKind(timevh%) = 0 then	                         'if time view exists
+	View(timevh%);
+	CursorDelete(-1);	                                 'delete cursors
+	Closemch%();	                                     'delete memory channels
+	ChanSelect(-1,0);	                                 'unselect all channels
+endif;
+View(loghandle());
+EditSelectAll();	                                     'clear the log
+EditClear();
+WindowTitle$("Log");	                                 'and rename it
+WindowVisible(2);	                                     'iconise
+return 0;
+end;
+
+func Closemch%();	                                     'close memory channels
+var mchlist%[10],i%;
+ChanList(mchlist%[],4096+16384);	                     'list memory channels  
+for i%:=1 to mchlist%[0] do	                             'get rid of all
+	if mchlist%[i%] <> spkch% then	                     'but keep the latest spike channel if it was a memory channel (Feb 2004)
+		ChanDelete(mchlist%[i%]);
+	endif;
+next;
+return 1;
+end;
+
+func NewFile%();	                                     'browse to datafile
+if ViewKind(timevh%) = 0 then	                         'close the previous time view
+	View(timevh%);	                                     'if there was one
+	FileClose(0,-1);
+endif;
+timevh%:=FileOpen("",0,2);
+'
+'=======================
+'ChanHide(3);                                            ' automated showall/optimise/hide Temp-Channel !!!(Andreas)
+XRange(0,Maxtime());
+Optimise(-2);  
+'=======================
+'
+if timevh% < 0 then
+	return 1;	                                         'cancelled
+else
+	'FileSetup();
+	'ToolbarEnable(all%,off%);
+	'ToolbarEnable(swBMake%,on%);	                     'button enable/disable
+	'ToolbarEnable(swquit%,on%);
+	'ToolbarEnable(swnewf%,on%);
+	'ToolbarText("Drag cursors to select time range for burst analysis.");
+	'pass%:=0;	                                         'reset counter of passes through the burst parameters selection dialog 
+endif;
+return 1;
+end;
+
+func analysis%();
+
+HCursorDelete(-1);
+CursorDelete(-1);
+
+FrontView(timevh%);
+windowname$ := WindowTitle$();
+
+   
+DlgCreate("Parameters:");
+DlgChan(1,"1. Event-Channel",2);
+DlgChan(2,"2. Event-Channel",2);
+DlgShow(channel1%,channel2%);
+
+Cursor(0,0);
+CursorNew(0,1);
+
+
+log% := LogHandle();
+View(log%);
+
+Print("Results of " + windowname$ + "\n\n");
+Print("Delay [ms]:\tSpike Extra1 [s]:\tSpike Extra2 [s]:\n");
+
+ToolbarClear();                                                                             
+ToolbarText("Spike-Delay");
+ToolbarSet(1,"&Back",Zurueck%);
+Toolbarset(3,"&Save Log", save%);
+Toolbarset(4,"&Write Log", writeLog%); 
+Toolbarset(5,"&Search",search%);                                                             															
+ToolbarSet(3,"&Optimize",optimize%);												    
+ToolbarSet(4,"&ShowAll",showall%);                                                         
+Toolbar("Analysis",1+2+4+16+32+64+128+256);
+ToolbarEnable(-1,1); 
+
+return 1;
+end;
+
+func search% ();
+
+View(timevh%);
+CursorSearch(0);
+
+
+CursorActive(0,14,channel1%,0, "", "", 1);
+CursorActive(1,14,channel2%,"Cursor(0)", "Cursor(0)+1", "", 1);               
+             
+
+
+
+return 1;
+end;
+
+func writeLog% ();
+    
+    
+
+View(timevh%);
+delay := (Cursor(1)-Cursor(0))*1000;
+spike1 := Cursor(1);
+spike2 := Cursor(0);  
+View(log%);   
+
+Print("%6.4f\t %6.4f\t %6.4f\n",delay,spike1,spike2);
+
+return 1;
+end;
+
+func save% ();
+
+'---------------------------------------------
+FrontView(log%);                                                                 'results: find "." and replace by "," (Andreas)
+EditSelectAll();
+EditCut(4);
+
+log1% := FileNew(1,1);
+EditPaste();
+MoveTo(0,0);
+
+found% := EditFind(".",1);
+
+while found% = 1 do
+    Print(",");
+    found% := EditFind(".",1);
+wend;
+
+FrontView(log1%);
+
+'---------------------------------------------
+
+if  ViewKind(log1%) = 1 or ViewKind(log1%) = 4 or ViewKind(log1%) = 12 then	    'if result, XY or text view
+    
+	View(log1%);
+	ttl$:=WindowTitle$();
+	ndx%:=Instr(ttl$,"ion of ");
+    
+	if ndx% > 0 then	                                                        'remove front end of distribution window titles to create default filename
+		ttl$:=Mid$(ttl$,ndx%+7);
+	endif;
+    
+    '----------------------------------------------------------
+    
+    result$ := windowname$+".txt";
+    '----------------------------------------------------------
+    
+	FileSaveAs(result$,-1,0,"Save as:");	                                    'FileSavAs menu
+    
+    if ViewKind(log1%) = 1 then	                                                'if text view exists, close it
+	View(log1%);
+    FileClose(0,-1);
+        
+    endif;
+    
+else
+	Message("Current View is not a text, XY or result view.");
+endif;
+
+return 1;
+end;
+
+func optimize%()
+
+	View(timevh%);									    
+    Optimise(-2);											
+    FrontView(timevh%);
+
+return 1;
+end;
+
+func showall%()
+
+    View(timevh%);
+    XRange(0,Maxtime());
+
+return 1;
+end;
+
+func Zurueck%();
+ToolbarClear();
+MainToolButtons();
+Toolbar(prmpt$,1+2+4+16+32+64+128+256);
+end;
+
+
+
+
+
+
+
+
+
+
+
+
