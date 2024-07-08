@@ -1,0 +1,299 @@
+var fileHandle%,title$,channel%,bu1%,output1%,name1$,echannel%,szeit,ezeit,starttime,endtime,prmpt$;
+
+const eot%:=1000000;
+
+
+
+
+
+fileHandle% := View();
+
+
+View(LogHandle());
+EditSelectAll();
+EditClear();
+View(fileHandle%);
+FrontView(fileHandle%);
+title$:=WindowTitle$();
+
+HCursorDelete(-1);
+CursorDelete(-1);
+
+
+MainToolButtons();
+Proc MainToolButtons();
+    ToolbarClear();                                                                          '// Lösche evtl. vorhandene Toolbar         															
+    ToolbarSet(0,"",IdleFunc%);   														     '// Leerlauf-Funktion
+    ToolbarSet(1,"Ende");                                                                    '// Beendet Skript mit Endfunktionen, aufräumen
+
+    ToolbarSet(3,"&Opt.",optimize%);                                                       '// optimiert die Daten in der y-Achse
+    ToolbarSet(4,"&ViewAll",all%);                                                         '// zeigt den gesamten Datensatz an  
+
+    ToolbarSet(5,"&NewFile",new%);
+    ToolbarSet(6,"&Import",import%);
+    ToolbarSet(7,"&Analysis",analysis%);
+    ToolbarSet(8,"&Save",SaveView%);
+                              
+    Toolbar("Haupt-Toolbar",1023); 														     '// Erzeuge Toolbar 423= geringere Rechte, ich lass das jetzt erstmal auf 1023=alle rechte
+end;
+
+func optimize%()
+    View(fileHandle%);									                                    '// Zeiger auf Hauptfenster-Ansicht
+    Optimise(-2);											                                '// Optimiere alle sichtbaren Kanäle
+	FrontView(fileHandle%);
+	return 1;
+end;
+func all% ()
+
+XRange(0,Maxtime());
+
+
+return 1;
+end;
+
+func new%()
+
+if ViewKind(fileHandle%) = 0 then	                         'close the previous time view
+	View(fileHandle%);	                                     'if there was one
+	FileClose(0,-1);
+endif;
+fileHandle%:=FileOpen("",0,2);
+'
+'=======================
+'ChanHide(3);           ' automated showall/optimise/hide Temp-Channel !!!(Andreas)
+XRange(0,Maxtime());
+Optimise(-2);  
+'=======================
+'
+if fileHandle% < 0 then
+	return 1;	                                        'cancelled
+else
+	FileSetup();
+endif;
+
+fileHandle% := View();
+
+	return 1;
+end;
+
+proc FileSetup();
+title$:=WindowTitle$();
+ChanSelect(-1,0);	                                     'no channels selected
+DoCursors(0,0);
+Window(0,0,100,47);
+FrontView(fileHandle%);	                                  'full frontal view
+return;
+end;
+
+Proc DoCursors(where1,where2);	                      'add 2 cursors to the current time view.
+if where1 = 0 and where2 = 0 then
+	CursorSet(2,0.0,900);	                      'whole file if <where> values are zero
+else
+	CursorSet(2,where1,where2);
+endif;
+CursorLabel(4,1,"start (%n)");
+CursorLabel(4,2,"end (%n)");
+CursorLabelPos(1,3);
+CursorLabelPos(2,6);
+return;
+end;
+
+func import%()
+
+    bu1% := MemChan(3,0,0);
+    
+
+    DlgCreate("Setting:");					
+    DlgChan(1,"Channel-Nr.",1);
+    DlgReal(2,"Start [s]",-3000,3000);
+    DlgReal(3,"End [s]",-3000,3000);
+    starttime:= 0;
+    endtime:= 900;
+    DlgShow(channel%,starttime,endtime);
+
+   
+    Cursor(1,starttime);
+    Cursor(2,endtime);
+
+    XRange(0,Maxtime());
+    'Optimise(-2);
+
+    HCursorNew(channel%,Ylow(channel%)+10);
+    HCursorNew(channel%,YHigh(channel%)-10);
+    HCursorLabel(4,1,"baseline");
+    HCursorLabel(4,2,"peak");
+    HCursorLabelPos(1);
+    HCursorLabelPos(2);
+
+
+    Interact("  Set HCursor !?       OK when ready",1+2+4+16+32+64+128+256,0,"OK  |0x0d");
+
+    XRange(starttime,endtime);
+    Optimise(-2);
+
+    DlgCreate("import to buffer");
+    DlgChan(1,"Channel-Nr. ?",128);
+    DlgString (2, "Name of new channels", 20);
+    name1$:= "Bu-Peak";
+    DlgShow(output1%,name1$);
+
+    MemImport(bu1%,channel%,starttime,endtime,0,0.01,HCursor(2)-HCursor(1));
+    ChanShow(bu1%);
+
+ToolbarClear();                                                                             '// Lösche evtl. vorhandene Toolbar
+ToolbarText("Confirmation of Event-Channel");
+ToolbarSet(0,"", IdleFunc%);                                                                  '// Leerlauf-Funktion
+ToolbarSet(1,"&Abort",Zurueck%);
+ToolbarSet(2,"&Save",SaveMem%);                                                          '// exportieren von Kanälen   															
+ToolbarSet(3,"&DeleteEvent",delete%);
+ToolbarSet(4,"&Optimieren",optimize%);												    '// Optimiere alle Kanäle
+ToolbarSet(5,"&ViewAll",all%);                                                        '// Zeige alle Kanäle  
+Toolbarset(6,"&Fetch",fetch%);                                                        '//fetch cursor (baseline,peak)
+Toolbar("Exportfile",1+2+4+16+32+64+128+256);
+ToolbarEnable(-1,1);
+
+    return 1;
+end;
+
+func SaveMem%()
+
+    MemSave(bu1%,output1%, 0, 0);	'saves buffer channel to a real channel
+    MemDeleteItem(bu1%,-1,1);		'deletes the items in buffer channel
+    ChanDelete(bu1%);               'delete memory channel
+    ChanShow(output1%);				'shows new channel
+ 	ChanTitle$(output1%,name1$);	'names new channel
+    DrawMode(output1%,2);			'sets channel draw mode to "lines"
+    HCursorDelete(-1);              'delete HChannels
+
+    ToolbarClear();
+    MainToolButtons();
+    Toolbar("Haupt-Toolbar",1023);
+
+    return 1;
+end;
+
+func Zurueck%();
+
+ChanDelete(bu1%);
+HCursorDelete(-1);
+'CursorDelete(-1);
+
+ToolbarClear();
+MainToolButtons();
+Toolbar("Haupt-Toolbar",1023);
+
+end;
+
+func delete%()
+
+        Interact("  Zoom in !!! ALL items will be deleted !?       OK when ready",1+2+4+16+32+64+128+256,0,"OK  |0x0d");
+
+        MemDeleteTime(bu1%,3,XLow(),XHigh());
+
+return 1;
+end
+
+func analysis%()
+
+szeit := 0;
+ezeit := 0;
+
+DlgCreate("Einstellungen:");					
+DlgChan(1,"Event channel-Nr.: ", 2);											
+DlgShow(echannel%);
+
+View(fileHandle%);
+XRange(0,Maxtime());
+szeit := NextTime(echannel%, 0); 'setze block-start
+ezeit := NextTime(echannel%,szeit); 'setze block-ende
+
+PrintLog(title$,"\n");
+PrintLog("Cycle Frquency [Hz]","\n");
+
+'Schleife welche den gesamten File durchläuft:
+while (ezeit > 0 and szeit > 0) do
+	PrintLog("%6.4f\n",1/(ezeit-szeit));
+	szeit := ezeit;
+	ezeit := NextTime(echannel%,szeit);
+wend;
+
+View(LogHandle());
+Frontview(LogHandle());
+
+	return 1;
+end;
+
+func SaveView%();
+var vh%,ttl$,ndx%,vh1%,found%,result$,eot%;
+View(LogHandle());
+vh%:=FrontView();
+
+'---------------------------------------------
+FrontView(vh%);                                  'results: find "." and replace by "," (Andreas)
+EditSelectAll();
+EditCut(4);
+vh1% := FileNew(1,1);
+EditPaste();
+MoveTo(0,0);
+found% := EditFind(".",1);
+
+while found% = 1 do
+    Print(",");
+    found% := EditFind(".",1);
+wend;
+
+FrontView(vh1%);
+
+'---------------------------------------------
+
+if  ViewKind(vh1%) = 1 or ViewKind(vh1%) = 4 or ViewKind(vh1%) = 12 then	'if result, XY or text view
+	View(vh1%);
+	ttl$:=WindowTitle$();
+	ndx%:=Instr(ttl$,"ion of ");
+	if ndx% > 0 then	                                  'remove front end of distribution window titles to create default filename
+		ttl$:=Mid$(ttl$,ndx%+7);
+	endif;
+    
+    '----------------------------------------------------------
+    
+    result$ := title$+".txt";
+    '----------------------------------------------------------
+    
+	FileSaveAs(result$,-1,0,"Save as:");	                'FileSavAs menu
+    
+    if ViewKind(vh1%) = 1 then	                         'if text view exists, close it
+	View(vh1%);
+    FileClose(0,-1);
+    FrontView(fileHandle%);
+    endif;
+    
+    else
+	Message("Current View is not a text, XY or result view.");
+    FrontView(fileHandle%);
+endif;
+FrontView(fileHandle%);
+return 1;
+end;
+func PrintTable%();
+var vh%;
+vh%:=ViewFind("Results.txt");
+if vh% = 0 then
+	Message("Results table not found.");
+	return 1;
+endif;
+View(vh%);
+FilePrint(1,eot%);	                                  'print all in portrait format
+return 1;
+end;
+
+func fetch%();
+
+HCursor(1,Ylow(channel%)+10);
+HCursor(2,YHigh(channel%)-10);
+
+return 1;
+end;
+
+func IdleFunc%()
+	return 1;
+end;
